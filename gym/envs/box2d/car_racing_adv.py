@@ -8,9 +8,18 @@ import gym
 from gym import spaces
 from gym.envs.box2d.car_dynamics import Car
 from gym.utils import colorize, seeding, EzPickle
+import matplotlib.pyplot as plt
 
 import pyglet
 from pyglet import gl
+
+from math import *
+
+from PIL import Image
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
+from OpenGL.GL import *
+import numpy
 
 # Easiest continuous control task to learn from pixels, a top-down racing environment.
 # Discrete control is reasonable in this environment as well, on/off discretization is
@@ -100,6 +109,23 @@ class FrictionDetector(contactListener):
             obj.tiles.remove(tile)
             # print tile.road_friction, "DEL", len(obj.tiles) -- should delete to zero when on grass (this works)
 
+def read_texture(filename):
+    img = Image.open(filename)
+    img_data = numpy.array(list(img.getdata()), numpy.int8)
+    texture_id = glGenTextures(1)
+    glBindTexture(GL_TEXTURE_2D, texture_id)
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+    glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, img.size[0], img.size[1], 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, img_data)
+    return texture_id
+
 class CarRacingAdv(gym.Env, EzPickle):
     metadata = {
         'render.modes': ['human', 'rgb_array', 'state_pixels'],
@@ -118,6 +144,7 @@ class CarRacingAdv(gym.Env, EzPickle):
         self.car = None
         self.reward = 0.0
         self.prev_reward = 0.0
+        self.prev_x, self.prev_y = 0.0, 0.0
         self.verbose = verbose
         self.fd_tile = fixtureDef(
                 shape = polygonShape(vertices=
@@ -125,6 +152,8 @@ class CarRacingAdv(gym.Env, EzPickle):
 
         self.action_space = spaces.Box( np.array([-1,0,0]), np.array([+1,+1,+1]), dtype=np.float32)  # steer, gas, brake
         self.observation_space = spaces.Box(low=0, high=255, shape=(STATE_H, STATE_W, 3), dtype=np.uint8)
+        self.i = 0
+        self.opened = False
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -337,6 +366,13 @@ class CarRacingAdv(gym.Env, EzPickle):
             if self.tile_visited_count==len(self.track):
                 done = True
             x, y = self.car.hull.position
+            # if self.i % 100 == 0:
+            #     print("Final: ", (x,y))
+            #     print("Previous: ", (self.prev_x, self.prev_y))
+            #     change_x, change_y = x - self.prev_x, y - self.prev_y
+            #     self.prev_x, self.prev_y = x, y
+            #     print("Change: ", (change_x, change_y))
+            # self.i += 1
             if abs(x) > PLAYFIELD or abs(y) > PLAYFIELD:
                 done = True
                 step_reward = -100
@@ -407,8 +443,15 @@ class CarRacingAdv(gym.Env, EzPickle):
 
         image_data = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
         arr = np.fromstring(image_data.get_data(), dtype=np.uint8, sep='')
+        # arr[arr>0] = 0
+        # print(arr.shape)
         arr = arr.reshape(VP_H, VP_W, 4)
         arr = arr[::-1, :, 0:3]
+        if self.i % 1000 == 0:
+            plt.imshow(arr)
+            plt.show()
+
+        self.i += 1
 
         return arr
 
@@ -437,6 +480,32 @@ class CarRacingAdv(gym.Env, EzPickle):
             for p in poly:
                 gl.glVertex3f(p[0], p[1], 0)
         gl.glEnd()
+
+        gl.glEnable(GL_TEXTURE_2D)
+        image = Image.open('/Users/traviszhang/Python Scripts/deeplearning/Science Fair 2019-2020/Project 2/adversarial-environment/param/test_circle_1.png')
+        img_data = numpy.array(list(image.getdata()), numpy.int8)
+        texID = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, texID)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.size[0], image.size[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
+
+        x, y = self.car.hull.position[0], self.car.hull.position[1]
+        width, height = 29, 29
+        gl.glBegin(gl.GL_QUADS)
+        gl.glTexCoord2f(0, 0)
+        gl.glVertex2f(x, y)  # bottom left point
+        gl.glTexCoord2f(1, 0)
+        gl.glVertex2f(x + width, y)  # bottom right point
+        gl.glTexCoord2f(1, 1)
+        gl.glVertex2f(x + width, y + height)  # top right point
+        gl.glTexCoord2f(0, 1)
+        gl.glVertex2f(x, y + height)  # top left point
+        gl.glEnd()
+        gl.glDisable(GL_TEXTURE_2D)
 
     def render_indicators(self, W, H):
         gl.glBegin(gl.GL_QUADS)
