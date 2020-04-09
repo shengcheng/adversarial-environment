@@ -482,7 +482,7 @@ class CarRacingAdv(gym.Env, EzPickle):
         gl.glEnd()
 
         gl.glEnable(GL_TEXTURE_2D)
-        image = Image.open('/Users/traviszhang/Python Scripts/deeplearning/Science Fair 2019-2020/Project 2/adversarial-environment/param/test_circle_1.png')
+        image = Image.open('param/test_circle_1.png')
         img_data = numpy.array(list(image.getdata()), numpy.int8)
         texID = glGenTextures(1)
         glBindTexture(GL_TEXTURE_2D, texID)
